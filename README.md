@@ -39,6 +39,9 @@ les données une fois par semaine, prépare les fichiers, puis GitHub Pages les 
 - **Fiche détaillée** au clic sur une carte : type, attribut, niveau / rang / lien, échelle Pendule, ATK / DEF,
   archétype, texte complet (FR si disponible) et la liste de toutes les extensions où la carte a été imprimée,
   avec un lien vers chacune.
+- **Cartes waifu ♡** : une vue dédiée (lien en haut de la colonne de gauche, ou `#/waifu`) qui réunit tous les
+  monstres représentant un personnage féminin, avec un filtre par nom ou archétype. Chaque extension propose aussi
+  un filtre « Waifu ♡ ». La sélection est automatique, voir [Réglages](#réglages) pour la compléter.
 - **Bouton FR / EN** pour choisir la langue des noms et des textes. Le choix est mémorisé dans le navigateur.
 - **Inclinaison 3D au survol** avec reflet lumineux. Les cartes holographiques (Super, Ultra…) et secrètes
   (Secret, Ultimate, Ghost, Starlight…) reçoivent en plus un reflet arc-en-ciel plus ou moins fort.
@@ -241,6 +244,7 @@ La navigation passe par l'ancre de l'URL : chaque page a sa propre adresse, que 
 |------------------------------|---------------------------------------------|
 | `#/`                         | Accueil : chiffres clés et 12 dernières sorties |
 | `#/set/<identifiant>`        | Une extension (ex. `#/set/LOB`)             |
+| `#/waifu`                    | Toutes les cartes waifu                      |
 | texte dans la barre de recherche (2 caractères ou plus) | Résultats de recherche |
 
 ### Inclinaison
@@ -328,10 +332,22 @@ simplement le fichier dans `dist/`.
 | `TILT_MAX`         | haut du script de `site/index.html`  | `14`   | Angle maximal d'inclinaison, en degrés                |
 | `TILT_DIR`         | haut du script de `site/index.html`  | `1`    | `1` : le coin sous le curseur s'enfonce ; `-1` : il se soulève |
 | `SEARCH_LIMIT`     | script de `site/index.html`          | `150`  | Nombre maximal de résultats de recherche affichés     |
+| `WAIFU_ARCHETYPES`, `WAIFU_WORDS`, `WAIFU_CARDS` | script de `site/index.html` | — | Sélection des cartes waifu (voir ci-dessous) |
 | `SKIP_IMAGES`      | variable d'environnement             | —      | `1` : aucun téléchargement d'image                    |
 | `IMG_CONCURRENCY`  | variable d'environnement             | `6`    | Téléchargements en parallèle                          |
 | `IMG_DELAY_MS`     | variable d'environnement             | `400`  | Pause par téléchargement après chaque image (ms)      |
 | Planification      | `cron` dans `deploy.yml`             | lundi 4 h UTC | Fréquence de mise à jour automatique           |
+
+**Sélection waifu.** L'API ne dit pas si un personnage est féminin. Le site retient donc un monstre s'il remplit
+au moins une de ces conditions :
+
+1. son archétype figure dans `WAIFU_ARCHETYPES` (archétypes entièrement féminins : Dragonmaid, Sky Striker,
+   Witchcrafter, Labrynth…) ;
+2. son nom anglais contient un mot de `WAIFU_WORDS` (Girl, Lady, Queen, Princess, Maiden, Witch…) ;
+3. son nom anglais exact figure dans `WAIFU_CARDS` (cartes isolées : Ash Blossom & Joyous Spring, Effect Veiler…).
+
+Pour ajouter une carte oubliée, mets son nom anglais exact dans `WAIFU_CARDS`. Pour un archétype entier, ajoute-le
+à `WAIFU_ARCHETYPES`. La modification est en ligne après le prochain déploiement, sans rebuild des données.
 
 ⚠️ Si tu changes `IMG_CONCURRENCY` ou `IMG_DELAY_MS`, reste sous **20 requêtes par seconde** au total, sinon
 YGOPRODeck bannit l'adresse IP pendant une heure.

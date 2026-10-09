@@ -18,6 +18,7 @@
   --muted: #A49DC8;
   --gold: #D9B65C;
   --holo: #9FD8E6;
+  --waifu: #F2A7C9;
   --body: "Alegreya Sans", "Gill Sans", "Segoe UI", system-ui, sans-serif;
   --display: "Alegreya Sans SC", "Alegreya Sans", "Gill Sans", system-ui, sans-serif;
   color-scheme: dark;
@@ -52,6 +53,13 @@ button, input, select { font: inherit; color: inherit; }
 .brand span { display: block; font-size: .95rem; font-weight: 500; color: var(--gold); margin-top: 4px; }
 .spine-head { display: grid; gap: 10px; padding-bottom: 14px; }
 .spine-head .brand { margin-bottom: 8px; }
+.waifu-link {
+  display: flex; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 8px; text-decoration: none;
+  background: var(--sleeve); border: 1px solid var(--edge); font-size: .95rem;
+}
+.waifu-link:hover { border-color: var(--waifu); }
+.waifu-link[aria-current=page] { border-color: var(--waifu); color: var(--waifu); }
+.waifu-link small { margin-left: auto; color: var(--muted); }
 input[type=search], select {
   width: 100%; background: var(--page); border: 1px solid var(--edge); border-radius: 8px; padding: 8px 11px;
 }
@@ -100,6 +108,8 @@ input::placeholder { color: var(--muted); }
 .seg button + button { border-left: 1px solid var(--edge); }
 .seg button[aria-pressed=true] { background: var(--sleeve); color: var(--gold); }
 .seg small { color: var(--muted); margin-left: 4px; }
+.seg button[data-kind=waifu][aria-pressed=true] { color: var(--waifu); }
+.set-code.waifu { color: var(--waifu); }
 .toolbar input { max-width: 280px; }
 
 /* ---------- Pochettes et cartes ---------- */
@@ -219,6 +229,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
   <aside class="spine" id="spine" aria-label="Extensions">
     <div class="spine-head">
       <a class="brand" href="#/">Classeur <span>Yu-Gi-Oh!</span></a>
+      <a class="waifu-link" id="waifu-link" href="#/waifu"><span aria-hidden="true">♡</span> Cartes waifu <small id="waifu-count"></small></a>
       <label><span class="sr">Filtrer les extensions</span><input id="set-filter" type="search" placeholder="Filtrer les extensions" autocomplete="off"></label>
       <label class="sortf"><span>Trier</span>
         <select id="set-sort">
@@ -280,14 +291,39 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
 
   const FRAME = { normal: 'Normal', effect: 'Effet', ritual: 'Rituel', fusion: 'Fusion', synchro: 'Synchro', xyz: 'Xyz', link: 'Lien', spell: 'Magie', trap: 'Piège', token: 'Jeton', skill: 'Compétence' };
   const ATTR = { DARK: 'Ténèbres', LIGHT: 'Lumière', EARTH: 'Terre', WATER: 'Eau', FIRE: 'Feu', WIND: 'Vent', DIVINE: 'Divin' };
-  const KINDS = [['all', 'Tout'], ['monster', 'Monstres'], ['spell', 'Magies'], ['trap', 'Pièges']];
+  const KINDS = [['all', 'Tout'], ['monster', 'Monstres'], ['spell', 'Magies'], ['trap', 'Pièges'], ['waifu', 'Waifu ♡']];
+
+  // Cartes « waifu » : monstres représentant un personnage féminin.
+  // Aucune donnée de l'API ne l'indique, on combine donc des archétypes entièrement féminins,
+  // des mots du nom anglais et quelques cartes isolées. Pour en ajouter, compléter ces trois listes.
+  const WAIFU_ARCHETYPES = new Set([
+    'Dragonmaid', 'Sky Striker', 'Witchcrafter', 'Lunalight', 'Live☆Twin', 'Evil★Twin', 'Amazoness',
+    'Magician Girl', 'Prediction Princess', 'Fairy Tail', 'Melodious', 'Labrynth', 'Marincess', 'Aromage',
+    'Exosister', 'Trickstar', 'Purrely', 'Mikanko', 'Rikka', 'Vernusylph', 'Altergeist', 'Cyber Angel',
+  ].map((a) => a.toLowerCase()));
+  const WAIFU_WORDS = /\b(girl|lady|queen|princess|maiden|witch|priestess|sorceress|enchantress|empress|valkyries?|goddess|mermaid|siren|nun|diva|idol|bride|madame|mademoiselle|mistress|duchess|huntress|heroine|sister|matriarch|geisha|kunoichi|miko|dryad|nymph|succubus)\b/i;
+  const WAIFU_CARDS = new Set([
+    'Ash Blossom & Joyous Spring', 'Ghost Ogre & Snow Rabbit', 'Ghost Belle & Haunted Mansion',
+    'Ghost Sister & Spooky Dogwood', 'Ghost Mourner & Moonlit Chill', 'Effect Veiler', 'Droll & Lock Bird',
+    'Ib the World Chalice Justiciar', 'Dogmatika Ecclesia, the Virtuous', 'Elemental HERO Burstinatrix',
+    'Tearlaments Merrli', 'Tearlaments Havnis', 'Tearlaments Kitkallos', 'Tearlaments Rulkallos',
+    'Snake-Eyes Poplar', 'Snake-Eyes Diabellstar', 'Fiendsmith\'s Lacrima', 'Centur-Ion Primera',
+    'Centur-Ion Trudea', 'Mystical Elf', 'Silent Magician', 'Ebon Magician Curran', 'White Magician Pikeru',
+    'Dreaming Nemleria',
+  ]);
+  const isWaifu = (c) => {
+    if (kindOf(c) !== 'monster' || c.f === 'token') return false;
+    if (WAIFU_CARDS.has(c.n)) return true;
+    if (c.ar && WAIFU_ARCHETYPES.has(c.ar.toLowerCase())) return true;
+    return WAIFU_WORDS.test(c.n);
+  };
   const SEARCH_LIMIT = 150;
 
   const state = {
-    sets: [], setById: new Map(), cards: {}, prints: new Map(), index: [], texts: null, meta: {},
+    sets: [], setById: new Map(), cards: {}, prints: new Map(), index: [], waifus: [], texts: null, meta: {},
     lang: store.get('ygo-lang') === 'en' ? 'en' : 'fr',
     sort: ['new', 'old', 'alpha'].includes(store.get('ygo-sort')) ? store.get('ygo-sort') : 'new',
-    current: null, kind: 'all', filter: '',
+    current: null, view: 'home', kind: 'all', filter: '',
   };
 
   const view = $('#view');
@@ -335,17 +371,21 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
       html += `<li><a class="set-link" href="#/set/${encodeURIComponent(s.id)}"${state.current === s ? ' aria-current="page"' : ''}>` +
         `<span class="sname">${esc(s.n)}</span><span class="scode">${esc(s.c)}</span><span class="scount">${s.k.length}</span></a></li>`;
     }
+    if (state.view === 'waifu') $('#waifu-link').setAttribute('aria-current', 'page');
+    else $('#waifu-link').removeAttribute('aria-current');
     $('#set-list').innerHTML = html || '<li class="empty">Aucune extension ne correspond. Essaie un code comme LOB ou un autre mot du nom.</li>';
   }
 
   // ---------- Vues ----------
   function showHome() {
     state.current = null;
+    state.view = 'home';
     document.title = 'Classeur Yu-Gi-Oh!';
     const latest = state.sets.filter((s) => s.d).slice(0, 12);
     const built = state.meta.builtAt ? ` Données mises à jour le ${fmtDate(state.meta.builtAt.slice(0, 10))}.` : '';
     view.innerHTML = `<header class="view-head"><h1 class="title">Toutes les cartes, rangées par extension</h1>` +
       `<p class="lede">${plural(Object.keys(state.cards).length, 'carte', 'cartes')} dans ${plural(state.sets.length, 'extension', 'extensions')}. Choisis une extension dans la liste ou cherche une carte par son nom.${built}</p></header>` +
+      `<p><a class="waifu-link" href="#/waifu" style="display:inline-flex"><span aria-hidden="true">♡</span> Voir les ${plural(state.waifus.length, 'carte waifu', 'cartes waifu')}</a></p>` +
       `<h2 class="section">Dernières sorties</h2><ul class="set-tiles">` +
       latest.map((s) => `<li><a class="set-tile" href="#/set/${encodeURIComponent(s.id)}"><b>${esc(s.c)}</b><span>${esc(s.n)}</span><small>${fmtDate(s.d)}, ${plural(s.k.length, 'carte', 'cartes')}</small></a></li>`).join('') +
       `</ul>`;
@@ -354,11 +394,17 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
 
   function showSet(set) {
     state.current = set;
+    state.view = 'set';
     state.kind = 'all';
     state.filter = '';
     document.title = `${set.n} – Classeur Yu-Gi-Oh!`;
-    const counts = { all: set.k.length, monster: 0, spell: 0, trap: 0 };
-    for (const [id] of set.k) if (state.cards[id]) counts[kindOf(state.cards[id])]++;
+    const counts = { all: set.k.length, monster: 0, spell: 0, trap: 0, waifu: 0 };
+    for (const [id] of set.k) {
+      const c = state.cards[id];
+      if (!c) continue;
+      counts[kindOf(c)]++;
+      if (c.w) counts.waifu++;
+    }
     const date = set.d ? `Sortie le ${fmtDate(set.d)}, ` : '';
     view.innerHTML = `<header class="view-head"><p class="set-code">${esc(set.c)}</p><h1 class="title">${esc(set.n)}</h1>` +
       `<p class="lede">${date}${plural(set.k.length, 'carte', 'cartes')}.</p></header>` +
@@ -377,7 +423,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
     const rows = set.k.filter(([id, code]) => {
       const c = state.cards[id];
       if (!c) return false;
-      if (state.kind !== 'all' && kindOf(c) !== state.kind) return false;
+      if (state.kind === 'waifu' ? !c.w : state.kind !== 'all' && kindOf(c) !== state.kind) return false;
       return !q || norm(c.n + ' ' + (c.nf || '') + ' ' + code).includes(q);
     });
     $('#grid').innerHTML = rows.map(([id, code, r]) => pocket(id, code, r)).join('') ||
@@ -386,6 +432,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
 
   function showSearch(raw) {
     state.current = null;
+    state.view = 'search';
     const q = norm(raw);
     const hits = state.index.filter(([, s]) => s.includes(q)).map(([id]) => id);
     hits.sort((a, b) => {
@@ -395,18 +442,48 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
     const shown = hits.slice(0, SEARCH_LIMIT);
     const sub = hits.length > SEARCH_LIMIT ? `Les ${SEARCH_LIMIT} premières sur ${plural(hits.length, 'carte', 'cartes')}. Précise ta recherche pour affiner.` : plural(hits.length, 'carte trouvée', 'cartes trouvées') + '.';
     view.innerHTML = `<header class="view-head"><h1 class="title">« ${esc(raw.trim())} »</h1><p class="lede">${sub}</p></header>` +
-      (hits.length ? `<ul class="pockets">` + shown.map((id) => {
-        const p = state.prints.get(id) || [];
-        const note = p.length ? plural(p.length, 'impression', 'impressions') : 'hors extension';
-        return pocket(id, p[0]?.[1] || '', '', note);
-      }).join('') + `</ul>` : `<p class="status">Aucune carte ne porte ce nom. Vérifie l'orthographe ou essaie dans l'autre langue (bouton FR / EN).</p>`);
+      (hits.length ? `<ul class="pockets">` + shown.map(cardPocket).join('') + `</ul>` : `<p class="status">Aucune carte ne porte ce nom. Vérifie l'orthographe ou essaie dans l'autre langue (bouton FR / EN).</p>`);
     renderSpine();
+  }
+
+  // Pochette d'une carte hors extension : première impression connue, ou nombre d'impressions
+  function cardPocket(id) {
+    const p = state.prints.get(id) || [];
+    const note = p.length ? plural(p.length, 'impression', 'impressions') : 'hors extension';
+    return pocket(id, p[0]?.[1] || '', '', note);
+  }
+
+  function showWaifu() {
+    state.current = null;
+    state.view = 'waifu';
+    state.filter = '';
+    document.title = 'Cartes waifu – Classeur Yu-Gi-Oh!';
+    view.innerHTML = `<header class="view-head"><p class="set-code waifu">♡ Sélection</p><h1 class="title">Cartes waifu</h1>` +
+      `<p class="lede">${plural(state.waifus.length, 'monstre', 'monstres')} représentant un personnage féminin, toutes extensions confondues. ` +
+      `La sélection est automatique (archétypes, mots du nom), quelques cartes peuvent manquer ou s'y glisser par erreur.</p></header>` +
+      `<div class="toolbar"><input type="search" id="in-waifu" placeholder="Filtrer les cartes waifu" aria-label="Filtrer les cartes waifu" autocomplete="off"></div>` +
+      `<ul class="pockets" id="grid"></ul>`;
+    renderWaifuGrid();
+    renderSpine();
+    $('#page').scrollTop = 0;
+  }
+
+  function renderWaifuGrid() {
+    const q = norm(state.filter);
+    const list = state.waifus.filter((id) => {
+      const c = state.cards[id];
+      return !q || norm(c.n + ' ' + (c.nf || '') + ' ' + (c.ar || '')).includes(q);
+    });
+    list.sort((a, b) => norm(nameOf(state.cards[a])).localeCompare(norm(nameOf(state.cards[b]))));
+    $('#grid').innerHTML = list.map(cardPocket).join('') || '<li class="empty">Aucune carte ne correspond à ce filtre.</li>';
   }
 
   function route() {
     const q = $('#card-search').value;
     if (norm(q).length >= 2) return showSearch(q);
-    const m = decodeURIComponent(location.hash.slice(1)).match(/^\/set\/(.+)$/);
+    const hash = decodeURIComponent(location.hash.slice(1));
+    if (hash === '/waifu') return showWaifu();
+    const m = hash.match(/^\/set\/(.+)$/);
     const set = m && state.setById.get(m[1]);
     set ? showSet(set) : showHome();
   }
@@ -508,6 +585,8 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
   $('#set-list').addEventListener('click', (e) => {
     if (e.target.closest('a')) { $('#card-search').value = ''; setNav(false); }
   });
+  $('#waifu-link').addEventListener('click', () => { $('#card-search').value = ''; setNav(false); });
+  view.addEventListener('click', (e) => { if (e.target.closest('.waifu-link')) $('#card-search').value = ''; });
   $('#set-filter').addEventListener('input', renderSpine);
   const sortSel = $('#set-sort');
   sortSel.value = state.sort;
@@ -528,6 +607,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
   });
   view.addEventListener('input', (e) => {
     if (e.target.id === 'in-set') { state.filter = e.target.value; renderSetGrid(); }
+    if (e.target.id === 'in-waifu') { state.filter = e.target.value; renderWaifuGrid(); }
   });
 
   function paintLang() {
@@ -544,6 +624,12 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
       view.querySelectorAll('[data-kind]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === kind)));
       $('#in-set').value = filter;
       renderSetGrid();
+    } else if (state.view === 'waifu') {
+      const { filter } = state;
+      showWaifu();
+      state.filter = filter;
+      $('#in-waifu').value = filter;
+      renderWaifuGrid();
     } else route();
   });
   window.addEventListener('hashchange', route);
@@ -559,6 +645,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
       for (const [id, c] of Object.entries(cards)) {
         c.id = Number(id);
         state.index.push([c.id, norm(c.n + ' ' + (c.nf || ''))]);
+        if (isWaifu(c)) { c.w = true; state.waifus.push(c.id); }
       }
       state.sets = sets;
       for (const s of sets) {
@@ -570,6 +657,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
         }
       }
       for (const list of state.prints.values()) list.sort((a, b) => (a[0].d || '9999').localeCompare(b[0].d || '9999'));
+      $('#waifu-count').textContent = state.waifus.length.toLocaleString('fr-FR');
       if (meta.builtAt) $('#built').textContent = ` Mise à jour : ${fmtDate(meta.builtAt.slice(0, 10))}.`;
       route();
     } catch {
