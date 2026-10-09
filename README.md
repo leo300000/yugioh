@@ -46,8 +46,9 @@ les données une fois par semaine, prépare les fichiers, puis GitHub Pages les 
 - **Zoom sur les cartes** : dans la fiche, un clic sur la carte (ou sur « 🔍 Agrandir ») l'affiche en plein écran.
   Ensuite : clic pour zoomer ×2,5 sur le point visé, molette pour régler le niveau (jusqu'à ×4), glisser pour se
   déplacer, pincer sur mobile, boutons − / + / Ajuster, et Échap pour fermer.
-- **Images en pleine résolution** (421 × 614 px, la plus grande taille fournie par YGOPRODeck), converties en WebP
-  pour rester légères : nettes dans la grille, y compris sur écran Retina, comme dans le zoom.
+- **Images haute résolution** : téléchargées en pleine taille chez YGOPRODeck, puis ramenées à 480 px de large
+  et converties en WebP. Elles restent nettes dans la grille, y compris sur écran Retina, et dans le zoom, tout en
+  tenant dans la limite de 1 Go de GitHub Pages.
 - **Bouton FR / EN** pour choisir la langue des noms et des textes. Le choix est mémorisé dans le navigateur.
 - **Inclinaison 3D au survol** avec reflet lumineux. Les cartes holographiques (Super, Ultra…) et secrètes
   (Secret, Ultimate, Ghost, Starlight…) reçoivent en plus un reflet arc-en-ciel plus ou moins fort.
@@ -158,10 +159,15 @@ n'est stocké que s'il diffère du nom anglais. Les textes, qui pèsent le plus 
 
 ### 4. Images
 
-- Une image par carte (l'illustration principale), en **pleine résolution** (`images/cards`, 421 × 614 px).
-- Chaque image est convertie en **WebP qualité 82** avec `sharp` : environ deux fois plus léger que le JPEG
-  d'origine, sans différence visible. Sans cette conversion, les ~13 000 images dépasseraient la limite de 1 Go
-  d'un site GitHub Pages. Le script affiche la taille totale des images à la fin du build et prévient au-delà de 950 Mo.
+- Une image par carte (l'illustration principale), téléchargée en **pleine résolution** (`images/cards`). Le script
+  affiche la taille des originaux dans le log.
+- Chaque image est **redimensionnée à 480 px de large** et convertie en **WebP qualité 78** avec `sharp`. Sans
+  cela, les ~14 000 images pèsent près de 2 Go, le double de la limite de 1 Go d'un site GitHub Pages.
+- **Garde-fou de poids** : après les téléchargements, le script additionne le poids des images. S'il dépasse
+  `IMG_BUDGET_MB` (900 Mo par défaut), il réduit la largeur en proportion et reconvertit tout le cache. La
+  largeur retenue est mémorisée pour les builds suivants.
+- **Changer un réglage ne retélécharge rien** : le fichier `.cache/img-hd/.params` garde la largeur et la qualité
+  utilisées. Si `IMG_WIDTH` ou `IMG_QUALITY` change, les images du cache sont simplement reconverties (1 à 2 minutes).
 - Le script compare la liste des images nécessaires au contenu de `.cache/img-hd/` et **ne télécharge que celles
   qui manquent**.
 - 6 téléchargements en parallèle, avec une pause de 400 ms après chaque image. Cela reste nettement sous la limite
@@ -353,7 +359,9 @@ simplement le fichier dans `dist/`.
 | `SKIP_IMAGES`      | variable d'environnement             | —      | `1` : aucun téléchargement d'image                    |
 | `IMG_CONCURRENCY`  | variable d'environnement             | `6`    | Téléchargements en parallèle                          |
 | `IMG_DELAY_MS`     | variable d'environnement             | `400`  | Pause par téléchargement après chaque image (ms)      |
-| `IMG_QUALITY`      | variable d'environnement             | `82`   | Qualité WebP (0-100). Ne s'applique qu'aux nouvelles images : vider le cache pour tout reconvertir |
+| `IMG_WIDTH`        | variable d'environnement             | `480`  | Largeur maximale des images (px). Un changement reconvertit le cache |
+| `IMG_QUALITY`      | variable d'environnement             | `78`   | Qualité WebP (0-100). Un changement reconvertit le cache |
+| `IMG_BUDGET_MB`    | variable d'environnement             | `900`  | Poids maximal des images ; au-delà, la largeur est réduite automatiquement |
 | `Z_MAX`            | script de `site/index.html`          | `4`    | Niveau de zoom maximal                                |
 | Planification      | `cron` dans `deploy.yml`             | lundi 4 h UTC | Fréquence de mise à jour automatique           |
 
@@ -389,7 +397,8 @@ YGOPRODeck bannit l'adresse IP pendant une heure.
 | Certaines cartes sans image | Image absente chez YGOPRODeck ou téléchargement raté | Elles seront retentées au build suivant |
 | Le build reprend 30 minutes | Le cache d'images a expiré | Normal, rien à faire |
 | `Le module sharp est introuvable` | `npm ci` pas lancé | Lancer `npm ci`, ou builder avec `SKIP_IMAGES=1` |
-| Avertissement « Plus de 950 Mo d'images » | Images trop lourdes pour GitHub Pages | Baisser `IMG_QUALITY` (ex. 75), vider le cache et relancer |
+| Message « Budget dépassé » dans le log | Images trop lourdes pour GitHub Pages | Rien à faire : la largeur est réduite automatiquement |
+| Avertissement « Plus de 950 Mo d'images » | Le garde-fou n'a pas suffi | Baisser `IMG_QUALITY` ou `IMG_BUDGET_MB` et relancer |
 | HTTP 429 / IP bannie | Trop de requêtes par seconde | Remettre les valeurs par défaut et attendre une heure |
 | Plus de mise à jour le lundi | Tâche planifiée désactivée après 60 jours sans activité | La réactiver depuis l'onglet **Actions** |
 

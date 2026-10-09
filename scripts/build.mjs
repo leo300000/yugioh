@@ -9,9 +9,11 @@
 //   SKIP_IMAGES=1        ne télécharge aucune image (build rapide en local)
 //   IMG_CONCURRENCY=6    téléchargements en parallèle
 //   IMG_DELAY_MS=400     pause par worker entre deux images (reste sous 20 req/s)
-//   IMG_QUALITY=82       qualité WebP (0-100)
+//   IMG_WIDTH=480        largeur maximale des images en pixels
+//   IMG_QUALITY=78       qualité WebP (0-100)
+//   IMG_BUDGET_MB=900    poids maximal des images ; au-delà, la largeur est réduite automatiquement
 
-import { mkdir, writeFile, readdir, cp, rm, rename, stat } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir, cp, rm, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,7 +27,12 @@ const API = 'https://db.ygoprodeck.com/api/v7';
 const IMG_BASE = 'https://images.ygoprodeck.com/images/cards';
 const CONCURRENCY = Number(process.env.IMG_CONCURRENCY || 6);
 const DELAY_MS = Number(process.env.IMG_DELAY_MS || 400);
-const QUALITY = Number(process.env.IMG_QUALITY || 82);
+const WIDTH = Number(process.env.IMG_WIDTH || 480);
+const QUALITY = Number(process.env.IMG_QUALITY || 78);
+// Réglages de conversion : s'ils changent, les images du cache sont reconverties sans être retéléchargées
+const IMG_PARAMS = JSON.stringify({ w: WIDTH, q: QUALITY });
+const PARAMS_FILE = path.join(CACHE_IMG, '.params');
+const BUDGET = Number(process.env.IMG_BUDGET_MB || 900) * 1e6;
 const SKIP_IMAGES = process.env.SKIP_IMAGES === '1';
 const UA = 'ygo-classeur/1.0 (site de fan statique)';
 
@@ -129,15 +136,21 @@ console.log(`  ${en.length} cartes, ${sets.length} extensions, ${frById.size} no
 
 // ---------- 4. Images (cache) ----------
 await mkdir(CACHE_IMG, { recursive: true });
-const have = new Set(await readdir(CACHE_IMG));
+const have = new Set((await readdir(CACHE_IMG)).filter((f) => f.endsWith('.webp')));
 const imageIds = [...new Set(Object.values(cards).map((c) => c.i))];
 const todo = SKIP_IMAGES ? [] : imageIds.filter((id) => !have.has(`${id}.webp`));
 console.log(`→ Images : ${imageIds.length - todo.length} déjà en cache, ${todo.length} à télécharger`);
 
-// WebP : environ deux fois plus léger que le JPEG d'origine à qualité égale. Sans cette conversion,
-// les ~13 000 images en pleine résolution dépasseraient la limite de 1 Go d'un site GitHub Pages.
+// WebP redimensionné : sans cette conversion, les ~14 000 images en pleine résolution dépasseraient
+// la limite de 1 Go d'un site GitHub Pages.
+// .params garde les réglages demandés (w, q) et la largeur réellement utilisée (eff), qui peut être
+// réduite automatiquement pour tenir dans IMG_BUDGET.
+const readParams = async () => { try { return JSON.parse(await readFile(PARAMS_FILE, 'utf8')); } catch { return {}; } };
+const old = await readParams();
+const sameRequest = old.w === WIDTH && old.q === QUALITY;
+let eff = sameRequest && old.eff ? old.eff : WIDTH;
 let sharp = null;
-if (todo.length) {
+if (!SKIP_IMAGES && (todo.length || have.size)) {
   try {
     sharp = (await import('sharp')).default;
   } catch {
@@ -145,19 +158,63 @@ if (todo.length) {
   }
 }
 
+const toWebp = (buf, width) =>
+  sharp(buf)
+    .resize({ width, withoutEnlargement: true })
+    .webp({ quality: QUALITY, effort: 5, smartSubsample: true })
+    .toBuffer();
+
+async function saveWebp(id, webp) {
+  const tmp = path.join(CACHE_IMG, `${id}.webp.part`);
+  await writeFile(tmp, webp);
+  await rename(tmp, path.join(CACHE_IMG, `${id}.webp`));
+}
+
+async function cachedFiles() {
+  return (await readdir(CACHE_IMG)).filter((f) => f.endsWith('.webp'));
+}
+
+async function cacheBytes() {
+  let n = 0;
+  for (const f of await cachedFiles()) n += (await stat(path.join(CACHE_IMG, f))).size;
+  return n;
+}
+
+// Reconvertit les images déjà en cache, sans rien retélécharger
+async function reconvertAll(width, why) {
+  const files = await cachedFiles();
+  console.log(`→ ${why} : reconversion de ${files.length} images en ${width} px de large, qualité ${QUALITY}`);
+  let k = 0;
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    while (k < files.length) {
+      const f = files[k++];
+      try {
+        await saveWebp(f.slice(0, -5), await toWebp(await readFile(path.join(CACHE_IMG, f)), width));
+      } catch (err) {
+        console.warn(`  ${f} : ${err.message}`);
+      }
+    }
+  }));
+}
+
+if (sharp && have.size && !sameRequest) await reconvertAll(eff, `Réglages modifiés (${JSON.stringify({ w: old.w, q: old.q })} → ${IMG_PARAMS})`);
+
 let next = 0;
 let done = 0;
 let failed = 0;
+let sampled = false;
 async function worker() {
   while (next < todo.length) {
     const id = todo[next++];
     try {
       const buf = await get(`${IMG_BASE}/${id}.jpg`, { as: 'buffer', tries: 3 });
       if (buf) {
-        const webp = await sharp(buf).webp({ quality: QUALITY, effort: 5, smartSubsample: true }).toBuffer();
-        const tmp = path.join(CACHE_IMG, `${id}.webp.part`);
-        await writeFile(tmp, webp);
-        await rename(tmp, path.join(CACHE_IMG, `${id}.webp`));
+        if (!sampled) {
+          sampled = true;
+          const m = await sharp(buf).metadata();
+          console.log(`  Taille des originaux : ${m.width} × ${m.height} px (${(buf.length / 1024).toFixed(0)} Ko pour la première)`);
+        }
+        await saveWebp(id, await toWebp(buf, eff));
       } else failed++;
     } catch (err) {
       failed++;
@@ -170,12 +227,24 @@ async function worker() {
 await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 if (failed) console.warn(`  ${failed} image(s) introuvable(s), elles s'afficheront comme emplacement vide`);
 
+// Garde-fou : si les images dépassent le budget, on réduit la largeur en proportion et on reconvertit
+if (sharp) {
+  const total = await cacheBytes();
+  console.log(`  Images en cache : ${(total / 1e6).toFixed(0)} Mo (budget ${(BUDGET / 1e6).toFixed(0)} Mo, largeur ${eff} px)`);
+  if (total > BUDGET) {
+    eff = Math.max(240, Math.floor(eff * Math.sqrt((BUDGET * 0.92) / total)));
+    await reconvertAll(eff, 'Budget dépassé');
+    console.log(`  Après réduction : ${((await cacheBytes()) / 1e6).toFixed(0)} Mo`);
+  }
+  await writeFile(PARAMS_FILE, JSON.stringify({ w: WIDTH, q: QUALITY, eff }));
+}
+
 // ---------- 5. dist/ ----------
 console.log('→ Écriture de dist/');
 await rm(DIST, { recursive: true, force: true });
 await cp(SITE, DIST, { recursive: true });
 await mkdir(path.join(DIST, 'data'), { recursive: true });
-await cp(CACHE_IMG, path.join(DIST, 'img'), { recursive: true, filter: (src) => !src.endsWith('.part') });
+await cp(CACHE_IMG, path.join(DIST, 'img'), { recursive: true, filter: (src) => !src.endsWith('.part') && path.basename(src) !== '.params' });
 await writeFile(path.join(DIST, 'data', 'cards.json'), JSON.stringify(cards));
 await writeFile(path.join(DIST, 'data', 'sets.json'), JSON.stringify(sets));
 await writeFile(path.join(DIST, 'data', 'texts.json'), JSON.stringify(texts));
@@ -185,5 +254,5 @@ const imgFiles = await readdir(path.join(DIST, 'img'));
 let imgBytes = 0;
 for (const f of imgFiles) imgBytes += (await stat(path.join(DIST, 'img', f))).size;
 console.log(`  ${imgFiles.length} images, ${(imgBytes / 1e6).toFixed(0)} Mo`);
-if (imgBytes > 950e6) console.warn('  ⚠ Plus de 950 Mo d\'images : GitHub Pages limite un site à 1 Go, baisse IMG_QUALITY');
+if (imgBytes > 950e6) console.warn('  ⚠ Plus de 950 Mo d\'images : GitHub Pages limite un site à 1 Go, baisse IMG_WIDTH ou IMG_QUALITY');
 console.log('✓ Terminé');
