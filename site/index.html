@@ -300,6 +300,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
     'Dragonmaid', 'Sky Striker', 'Witchcrafter', 'Lunalight', 'Live☆Twin', 'Evil★Twin', 'Amazoness',
     'Magician Girl', 'Prediction Princess', 'Fairy Tail', 'Melodious', 'Labrynth', 'Marincess', 'Aromage',
     'Exosister', 'Trickstar', 'Purrely', 'Mikanko', 'Rikka', 'Vernusylph', 'Altergeist', 'Cyber Angel',
+    'Solfachord',
   ].map((a) => a.toLowerCase()));
   const WAIFU_WORDS = /\b(girl|lady|queen|princess|maiden|witch|priestess|sorceress|enchantress|empress|valkyries?|goddess|mermaid|siren|nun|diva|idol|bride|madame|mademoiselle|mistress|duchess|huntress|heroine|sister|matriarch|geisha|kunoichi|miko|dryad|nymph|succubus)\b/i;
   const WAIFU_CARDS = new Set([
@@ -309,11 +310,14 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
     'Tearlaments Merrli', 'Tearlaments Havnis', 'Tearlaments Kitkallos', 'Tearlaments Rulkallos',
     'Snake-Eyes Poplar', 'Snake-Eyes Diabellstar', 'Fiendsmith\'s Lacrima', 'Centur-Ion Primera',
     'Centur-Ion Trudea', 'Mystical Elf', 'Silent Magician', 'Ebon Magician Curran', 'White Magician Pikeru',
-    'Dreaming Nemleria',
+    'Dreaming Nemleria', 'I:P Masquerena', 'Elzette of the White Forest', 'Rucia of the White Forest',
+    'Silvy of the White Forest',
   ]);
+  // Charmers et leurs versions Possédées (Aussa, Eria, Hiita, Wynn, Lyna) ; Dharc, seul garçon, est exclu
+  const WAIFU_NAMES = /^(Familiar-Possessed - )?(Aussa|Eria|Hiita|Wynn|Lyna)\b/;
   const isWaifu = (c) => {
     if (kindOf(c) !== 'monster' || c.f === 'token') return false;
-    if (WAIFU_CARDS.has(c.n)) return true;
+    if (WAIFU_CARDS.has(c.n) || WAIFU_NAMES.test(c.n)) return true;
     if (c.ar && WAIFU_ARCHETYPES.has(c.ar.toLowerCase())) return true;
     return WAIFU_WORDS.test(c.n);
   };

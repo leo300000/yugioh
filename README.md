@@ -344,7 +344,12 @@ au moins une de ces conditions :
 1. son archétype figure dans `WAIFU_ARCHETYPES` (archétypes entièrement féminins : Dragonmaid, Sky Striker,
    Witchcrafter, Labrynth…) ;
 2. son nom anglais contient un mot de `WAIFU_WORDS` (Girl, Lady, Queen, Princess, Maiden, Witch…) ;
-3. son nom anglais exact figure dans `WAIFU_CARDS` (cartes isolées : Ash Blossom & Joyous Spring, Effect Veiler…).
+3. son nom anglais exact figure dans `WAIFU_CARDS` (cartes isolées : Ash Blossom & Joyous Spring, Effect Veiler,
+   I:P Masquerena, les filles de la White Forest…) ;
+4. c'est une Charmeuse ou sa version Possédée (Aussa, Eria, Hiita, Wynn, Lyna), via `WAIFU_NAMES`.
+
+Ces listes s'appuient sur les cartes et archétypes que la communauté cite le plus souvent comme « waifu »
+(Dark Magician Girl, Sky Striker, Dragonmaid, Exosister, Solfachord, Lunalight, Harpie, Cyber Angel…).
 
 Pour ajouter une carte oubliée, mets son nom anglais exact dans `WAIFU_CARDS`. Pour un archétype entier, ajoute-le
 à `WAIFU_ARCHETYPES`. La modification est en ligne après le prochain déploiement, sans rebuild des données.
