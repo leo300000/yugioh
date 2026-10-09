@@ -26,13 +26,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+
+      # sharp, pour convertir les images en WebP
+      - run: npm ci
 
       # Les images déjà téléchargées sont restaurées : seules les nouvelles sont récupérées
       - uses: actions/cache@v4
         with:
-          path: .cache/img
-          key: ygo-img-${{ github.run_id }}
-          restore-keys: ygo-img-
+          path: .cache/img-hd
+          key: ygo-imghd-${{ github.run_id }}
+          restore-keys: ygo-imghd-
 
       - name: Construire le site
         run: node scripts/build.mjs

@@ -6,7 +6,8 @@ Un classeur en ligne qui range **toutes les cartes Yu-Gi-Oh!** par extension, co
 une pochette par carte, son code d'impression et sa rareté, une recherche dans tout le catalogue,
 les noms en français ou en anglais, et un effet d'inclinaison holographique au survol.
 
-Le site est **100 % statique** : pas de serveur ni de base de données, et aucune dépendance npm. Un script Node récupère
+Le site est **100 % statique** : pas de serveur ni de base de données. Une seule dépendance npm, `sharp`, sert au build pour
+convertir les images. Un script Node récupère
 les données une fois par semaine, prépare les fichiers, puis GitHub Pages les sert tels quels.
 
 ---
@@ -42,6 +43,11 @@ les données une fois par semaine, prépare les fichiers, puis GitHub Pages les 
 - **Cartes waifu ♡** : une vue dédiée (lien en haut de la colonne de gauche, ou `#/waifu`) qui réunit tous les
   monstres représentant un personnage féminin, avec un filtre par nom ou archétype. Chaque extension propose aussi
   un filtre « Waifu ♡ ». La sélection est automatique, voir [Réglages](#réglages) pour la compléter.
+- **Zoom sur les cartes** : dans la fiche, un clic sur la carte (ou sur « 🔍 Agrandir ») l'affiche en plein écran.
+  Ensuite : clic pour zoomer ×2,5 sur le point visé, molette pour régler le niveau (jusqu'à ×4), glisser pour se
+  déplacer, pincer sur mobile, boutons − / + / Ajuster, et Échap pour fermer.
+- **Images en pleine résolution** (421 × 614 px, la plus grande taille fournie par YGOPRODeck), converties en WebP
+  pour rester légères : nettes dans la grille, y compris sur écran Retina, comme dans le zoom.
 - **Bouton FR / EN** pour choisir la langue des noms et des textes. Le choix est mémorisé dans le navigateur.
 - **Inclinaison 3D au survol** avec reflet lumineux. Les cartes holographiques (Super, Ultra…) et secrètes
   (Secret, Ultimate, Ghost, Starlight…) reçoivent en plus un reflet arc-en-ciel plus ou moins fort.
@@ -65,10 +71,10 @@ les données une fois par semaine, prépare les fichiers, puis GitHub Pages les 
                                   ▼
 ┌──────────────────────── GitHub Actions (job « build ») ────────────────────────┐
 │                                                                                 │
-│   cache .cache/img  ──restauré──►  node scripts/build.mjs  ──►  dist/           │
+│ cache .cache/img-hd ──restauré──►  node scripts/build.mjs  ──►  dist/           │
 │   (images des runs                  1. données                  index.html      │
 │    précédents)                      2. cartes                   data/*.json     │
-│                                     3. extensions               img/*.jpg       │
+│                                     3. extensions               img/*.webp      │
 │                                     4. images                   .nojekyll       │
 │                                     5. écriture de dist/                        │
 │                                                                                 │
@@ -96,6 +102,8 @@ C'est ce que demande le guide de l'API YGOPRODeck, qui interdit d'afficher leurs
 │   └── build.mjs          # pipeline de données : API → dist/
 ├── site/
 │   └── index.html         # tout le site : HTML, CSS et JavaScript dans un seul fichier
+├── package.json           # dépendance de build : sharp (conversion WebP)
+├── package-lock.json      # versions figées, installées par « npm ci »
 ├── .gitignore             # ignore dist/, .cache/, node_modules/
 └── README.md
 ```
@@ -104,14 +112,15 @@ Dossiers générés, jamais versionnés :
 
 | Dossier       | Contenu                                                                 |
 |---------------|-------------------------------------------------------------------------|
-| `.cache/img/` | Les images téléchargées, gardées d'un build à l'autre                    |
+| `.cache/img-hd/` | Les images converties en WebP, gardées d'un build à l'autre           |
+| `node_modules/`  | `sharp`, installé par `npm ci`                                         |
 | `dist/`       | Le site prêt à publier : copie de `site/` + `data/` + `img/`            |
 
 ---
 
 ## Le pipeline de données : `scripts/build.mjs`
 
-Un seul script Node (20 ou plus), sans dépendance : il n'utilise que `fetch` et `node:fs`, intégrés à Node.
+Un seul script Node (20 ou plus). Il utilise `fetch` et `node:fs`, intégrés à Node, plus `sharp` pour les images.
 Il s'exécute de haut en bas en cinq étapes.
 
 ### 1. Récupération des données
@@ -149,9 +158,12 @@ n'est stocké que s'il diffère du nom anglais. Les textes, qui pèsent le plus 
 
 ### 4. Images
 
-- Une image par carte (l'illustration principale), au format `cards_small` (~168×246 px).
-- Le script compare la liste des images nécessaires au contenu de `.cache/img/` et **ne télécharge que celles qui
-  manquent**.
+- Une image par carte (l'illustration principale), en **pleine résolution** (`images/cards`, 421 × 614 px).
+- Chaque image est convertie en **WebP qualité 82** avec `sharp` : environ deux fois plus léger que le JPEG
+  d'origine, sans différence visible. Sans cette conversion, les ~13 000 images dépasseraient la limite de 1 Go
+  d'un site GitHub Pages. Le script affiche la taille totale des images à la fin du build et prévient au-delà de 950 Mo.
+- Le script compare la liste des images nécessaires au contenu de `.cache/img-hd/` et **ne télécharge que celles
+  qui manquent**.
 - 6 téléchargements en parallèle, avec une pause de 400 ms après chaque image. Cela reste nettement sous la limite
   de 20 requêtes par seconde de YGOPRODeck, au-delà de laquelle l'IP est bannie pendant une heure.
 - Chaque image est d'abord écrite dans un fichier `.part`, puis renommée. Un build interrompu ne laisse donc jamais
@@ -161,7 +173,8 @@ n'est stocké que s'il diffère du nom anglais. Les textes, qui pèsent le plus 
 ### 5. Écriture de `dist/`
 
 `dist/` est vidé, puis le script y copie `site/` et les images (sans les `.part`). Il écrit ensuite les quatre
-fichiers JSON et un fichier `.nojekyll`, qui empêche GitHub Pages de passer le site dans Jekyll.
+fichiers JSON et un fichier `.nojekyll`, qui empêche GitHub Pages de passer le site dans Jekyll. Il termine en
+affichant le nombre d'images et leur poids total.
 
 ### Durée
 
@@ -195,14 +208,15 @@ Fichier : [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), nommé
 ### Job `build` (limite de 120 minutes)
 
 1. **`actions/checkout@v4`** récupère le code.
-2. **`actions/setup-node@v4`** installe Node 22.
-3. **`actions/cache@v4`** restaure `.cache/img`.
-   - La clé `ygo-img-<run_id>` est unique à chaque run, et `restore-keys: ygo-img-` restaure le cache le plus récent.
+2. **`actions/setup-node@v4`** installe Node 22 et garde en cache les paquets npm téléchargés.
+3. **`npm ci`** installe `sharp` dans la version figée par `package-lock.json`.
+4. **`actions/cache@v4`** restaure `.cache/img-hd`.
+   - La clé `ygo-imghd-<run_id>` est unique à chaque run, et `restore-keys: ygo-imghd-` restaure le cache le plus récent.
    - Résultat : chaque run repart des images du run précédent et enregistre en fin de job un nouveau cache qui
      inclut les nouvelles images. Le cache grossit donc au fil des extensions sans jamais tout retélécharger.
-4. **`node scripts/build.mjs`** construit `dist/` (voir plus haut).
-5. **`actions/configure-pages@v5`** prépare la publication.
-6. **`actions/upload-pages-artifact@v3`** envoie `dist/` comme artefact Pages.
+5. **`node scripts/build.mjs`** construit `dist/` (voir plus haut).
+6. **`actions/configure-pages@v5`** prépare la publication.
+7. **`actions/upload-pages-artifact@v3`** envoie `dist/` comme artefact Pages.
 
 ### Job `deploy`
 
@@ -304,13 +318,16 @@ pied de page.
 
 ## Travailler en local
 
-Prérequis : **Node 20 ou plus**. Il n'y a rien à installer.
+Prérequis : **Node 20 ou plus**.
 
 ```bash
+# Une fois : installe sharp (inutile pour un build sans images)
+npm ci
+
 # Build rapide : les données seulement, sans image (les cartes s'affichent avec leur nom)
 SKIP_IMAGES=1 node scripts/build.mjs
 
-# Build complet : télécharge les images dans .cache/img (long la première fois)
+# Build complet : télécharge et convertit les images dans .cache/img-hd (long la première fois)
 node scripts/build.mjs
 
 # Servir le site
@@ -336,6 +353,8 @@ simplement le fichier dans `dist/`.
 | `SKIP_IMAGES`      | variable d'environnement             | —      | `1` : aucun téléchargement d'image                    |
 | `IMG_CONCURRENCY`  | variable d'environnement             | `6`    | Téléchargements en parallèle                          |
 | `IMG_DELAY_MS`     | variable d'environnement             | `400`  | Pause par téléchargement après chaque image (ms)      |
+| `IMG_QUALITY`      | variable d'environnement             | `82`   | Qualité WebP (0-100). Ne s'applique qu'aux nouvelles images : vider le cache pour tout reconvertir |
+| `Z_MAX`            | script de `site/index.html`          | `4`    | Niveau de zoom maximal                                |
 | Planification      | `cron` dans `deploy.yml`             | lundi 4 h UTC | Fréquence de mise à jour automatique           |
 
 **Sélection waifu.** L'API ne dit pas si un personnage est féminin. Le site retient donc un monstre s'il remplit
@@ -369,6 +388,8 @@ YGOPRODeck bannit l'adresse IP pendant une heure.
 | Noms uniquement en anglais | L'appel français a échoué pendant le build | Le build suivant corrigera ; relancer à la main si besoin |
 | Certaines cartes sans image | Image absente chez YGOPRODeck ou téléchargement raté | Elles seront retentées au build suivant |
 | Le build reprend 30 minutes | Le cache d'images a expiré | Normal, rien à faire |
+| `Le module sharp est introuvable` | `npm ci` pas lancé | Lancer `npm ci`, ou builder avec `SKIP_IMAGES=1` |
+| Avertissement « Plus de 950 Mo d'images » | Images trop lourdes pour GitHub Pages | Baisser `IMG_QUALITY` (ex. 75), vider le cache et relancer |
 | HTTP 429 / IP bannie | Trop de requêtes par seconde | Remettre les valeurs par défaut et attendre une heure |
 | Plus de mise à jour le lundi | Tâche planifiée désactivée après 60 jours sans activité | La réactiver depuis l'onglet **Actions** |
 

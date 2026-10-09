@@ -1,27 +1,31 @@
 #!/usr/bin/env node
 // Construit le site statique dans dist/ :
 //  - télécharge les données de l'API YGOPRODeck (3 appels seulement)
-//  - télécharge les images manquantes dans .cache/img (jamais de hotlink)
+//  - télécharge les images manquantes en pleine résolution, les convertit en WebP
+//    et les garde dans .cache/img-hd (jamais de hotlink)
 //  - écrit data/*.json et copie site/ + images dans dist/
 //
 // Variables d'environnement :
 //   SKIP_IMAGES=1        ne télécharge aucune image (build rapide en local)
 //   IMG_CONCURRENCY=6    téléchargements en parallèle
 //   IMG_DELAY_MS=400     pause par worker entre deux images (reste sous 20 req/s)
+//   IMG_QUALITY=82       qualité WebP (0-100)
 
-import { mkdir, writeFile, readdir, cp, rm, rename } from 'node:fs/promises';
+import { mkdir, writeFile, readdir, cp, rm, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SITE = path.join(ROOT, 'site');
 const DIST = path.join(ROOT, 'dist');
-const CACHE_IMG = path.join(ROOT, '.cache', 'img');
+const CACHE_IMG = path.join(ROOT, '.cache', 'img-hd');
 
 const API = 'https://db.ygoprodeck.com/api/v7';
-const IMG_BASE = 'https://images.ygoprodeck.com/images/cards_small';
+// Pleine résolution (421 × 614 px) : de quoi afficher le zoom net, y compris sur écran Retina
+const IMG_BASE = 'https://images.ygoprodeck.com/images/cards';
 const CONCURRENCY = Number(process.env.IMG_CONCURRENCY || 6);
 const DELAY_MS = Number(process.env.IMG_DELAY_MS || 400);
+const QUALITY = Number(process.env.IMG_QUALITY || 82);
 const SKIP_IMAGES = process.env.SKIP_IMAGES === '1';
 const UA = 'ygo-classeur/1.0 (site de fan statique)';
 
@@ -127,8 +131,19 @@ console.log(`  ${en.length} cartes, ${sets.length} extensions, ${frById.size} no
 await mkdir(CACHE_IMG, { recursive: true });
 const have = new Set(await readdir(CACHE_IMG));
 const imageIds = [...new Set(Object.values(cards).map((c) => c.i))];
-const todo = SKIP_IMAGES ? [] : imageIds.filter((id) => !have.has(`${id}.jpg`));
+const todo = SKIP_IMAGES ? [] : imageIds.filter((id) => !have.has(`${id}.webp`));
 console.log(`→ Images : ${imageIds.length - todo.length} déjà en cache, ${todo.length} à télécharger`);
+
+// WebP : environ deux fois plus léger que le JPEG d'origine à qualité égale. Sans cette conversion,
+// les ~13 000 images en pleine résolution dépasseraient la limite de 1 Go d'un site GitHub Pages.
+let sharp = null;
+if (todo.length) {
+  try {
+    sharp = (await import('sharp')).default;
+  } catch {
+    throw new Error('Le module sharp est introuvable : lance « npm ci » avant le build (ou SKIP_IMAGES=1).');
+  }
+}
 
 let next = 0;
 let done = 0;
@@ -139,9 +154,10 @@ async function worker() {
     try {
       const buf = await get(`${IMG_BASE}/${id}.jpg`, { as: 'buffer', tries: 3 });
       if (buf) {
-        const tmp = path.join(CACHE_IMG, `${id}.jpg.part`);
-        await writeFile(tmp, buf);
-        await rename(tmp, path.join(CACHE_IMG, `${id}.jpg`));
+        const webp = await sharp(buf).webp({ quality: QUALITY, effort: 5, smartSubsample: true }).toBuffer();
+        const tmp = path.join(CACHE_IMG, `${id}.webp.part`);
+        await writeFile(tmp, webp);
+        await rename(tmp, path.join(CACHE_IMG, `${id}.webp`));
       } else failed++;
     } catch (err) {
       failed++;
@@ -165,4 +181,9 @@ await writeFile(path.join(DIST, 'data', 'sets.json'), JSON.stringify(sets));
 await writeFile(path.join(DIST, 'data', 'texts.json'), JSON.stringify(texts));
 await writeFile(path.join(DIST, 'data', 'meta.json'), JSON.stringify({ builtAt: new Date().toISOString(), cards: en.length, sets: sets.length }));
 await writeFile(path.join(DIST, '.nojekyll'), '');
+const imgFiles = await readdir(path.join(DIST, 'img'));
+let imgBytes = 0;
+for (const f of imgFiles) imgBytes += (await stat(path.join(DIST, 'img', f))).size;
+console.log(`  ${imgFiles.length} images, ${(imgBytes / 1e6).toFixed(0)} Mo`);
+if (imgBytes > 950e6) console.warn('  ⚠ Plus de 950 Mo d\'images : GitHub Pages limite un site à 1 Go, baisse IMG_QUALITY');
 console.log('✓ Terminé');

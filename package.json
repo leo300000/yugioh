@@ -1,0 +1,15 @@
+{
+  "name": "ygo-classeur",
+  "private": true,
+  "description": "Classeur Yu-Gi-Oh! statique, construit par scripts/build.mjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:data": "SKIP_IMAGES=1 node scripts/build.mjs"
+  },
+  "dependencies": {
+    "sharp": "^0.35.5"
+  }
+}

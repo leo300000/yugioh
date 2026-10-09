@@ -186,7 +186,42 @@ dialog {
 }
 dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px); }
 .dlg { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 30px; padding: 30px; max-height: 90vh; overflow-y: auto; }
-.dlg .card { cursor: default; }
+.dlg .card { cursor: zoom-in; }
+.zoom-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 12px;
+  background: var(--sleeve); border: 1px solid var(--edge); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: .92rem;
+}
+.zoom-btn:hover { border-color: var(--gold); }
+
+/* ---------- Zoom ---------- */
+#zoom {
+  width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; border-radius: 0;
+  background: rgba(8, 6, 22, .94); box-shadow: none;
+}
+#zoom::backdrop { background: rgba(8, 6, 22, .6); }
+.zoom-stage {
+  position: absolute; inset: 0; overflow: hidden; display: grid; place-items: center;
+  cursor: zoom-in; touch-action: none;
+}
+.zoom-stage.zoomed { cursor: grab; }
+.zoom-stage.dragging { cursor: grabbing; }
+.zoom-stage img {
+  display: block; height: min(calc(100dvh - 90px), 900px); width: auto; max-width: calc(100vw - 32px); object-fit: contain;
+  border-radius: 4.5% / 3.1%; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  transform: translate(var(--zx, 0px), var(--zy, 0px)) scale(var(--zs, 1));
+  transition: transform .25s ease; user-select: none; -webkit-user-drag: none;
+}
+.zoom-stage.dragging img { transition: none; }
+.zoom-bar {
+  position: absolute; left: 50%; bottom: max(16px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 2;
+  display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 12px;
+  background: rgba(36, 31, 71, .92); border: 1px solid var(--edge); backdrop-filter: blur(6px);
+}
+.zoom-bar button { background: var(--sleeve); border: 1px solid var(--edge); border-radius: 8px; min-width: 40px; padding: 6px 10px; cursor: pointer; }
+.zoom-bar button:hover { border-color: var(--gold); }
+.zoom-bar output { min-width: 52px; text-align: center; font: 700 .9rem var(--display); color: var(--muted); }
+#zoom .close { z-index: 3; }
+.zoom-name { position: absolute; top: max(14px, env(safe-area-inset-top, 0px)); left: 18px; right: 120px; z-index: 2; font: 700 1.1rem var(--display); margin: 0; }
 .close { position: absolute; top: 12px; right: 12px; background: var(--sleeve); border: 1px solid var(--edge); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 .dlg h2 { font: 800 1.8rem/1.08 var(--display); margin: 0 60px 4px 0; text-wrap: balance; }
 .alt { color: var(--muted); margin: 0 0 16px; font-style: italic; }
@@ -220,7 +255,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
   .dlg-card { width: min(230px, 70%); margin: 0 auto; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .card-inner, .glare, .foil, .spine { transition: none !important; }
+  .card-inner, .glare, .foil, .spine, .zoom-stage img { transition: none !important; }
 }
 </style>
 </head>
@@ -261,7 +296,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
 <dialog id="card-dialog" aria-labelledby="dlg-name">
   <div class="dlg">
     <button class="close" type="button" id="dlg-close">Fermer</button>
-    <div class="dlg-card" id="dlg-card"></div>
+    <div class="dlg-card"><div id="dlg-card" title="Cliquer pour agrandir"></div><button class="zoom-btn" type="button" id="zoom-open"><span aria-hidden="true">🔍</span> Agrandir</button></div>
     <div class="dlg-info">
       <h2 id="dlg-name"></h2>
       <p class="alt" id="dlg-alt"></p>
@@ -270,6 +305,18 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
       <h3>Présente dans</h3>
       <ul class="prints" id="dlg-prints"></ul>
     </div>
+  </div>
+</dialog>
+
+<dialog id="zoom" aria-label="Carte agrandie">
+  <p class="zoom-name" id="zoom-name"></p>
+  <button class="close" type="button" id="zoom-close">Fermer</button>
+  <div class="zoom-stage" id="zoom-stage"><img id="zoom-img" alt="" draggable="false"></div>
+  <div class="zoom-bar">
+    <button type="button" id="zoom-out" aria-label="Dézoomer">−</button>
+    <output id="zoom-level">100 %</output>
+    <button type="button" id="zoom-in" aria-label="Zoomer">+</button>
+    <button type="button" id="zoom-reset">Ajuster</button>
   </div>
 </dialog>
 
@@ -347,7 +394,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
   function cardFace(c, foil, tag = 'span') {
     const name = nameOf(c);
     return `<${tag === 'button' ? 'button type="button"' : 'div'} class="card" data-id="${c.id}" data-foil="${foil}"${tag === 'button' ? ` aria-label="${esc(name)}"` : ''}>` +
-      `<span class="card-inner" data-name="${esc(name)}"><img src="img/${c.i}.jpg" alt="${tag === 'button' ? '' : esc(name)}" loading="lazy" decoding="async" width="168" height="246">` +
+      `<span class="card-inner" data-name="${esc(name)}"><img src="img/${c.i}.webp" alt="${tag === 'button' ? '' : esc(name)}" loading="lazy" decoding="async" width="421" height="614">` +
       `${foil ? '<span class="foil"></span>' : ''}<span class="glare"></span></span></${tag === 'button' ? 'button' : 'div'}>`;
   }
   function pocket(id, code, rarity, note) {
@@ -498,6 +545,7 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
     const c = state.cards[id];
     if (!c) return;
     $('#dlg-card').innerHTML = cardFace(c, foil, 'div');
+    zoomCard = c;
     $('#dlg-name').textContent = nameOf(c);
     $('#dlg-alt').textContent = altNameOf(c);
     $('#dlg-alt').hidden = !altNameOf(c);
@@ -526,6 +574,92 @@ dialog::backdrop { background: rgba(10, 8, 28, .74); backdrop-filter: blur(3px);
     desc.textContent = (state.lang === 'fr' ? t[1] || t[0] : t[0]) || '';
   }
   $('#dlg-close').addEventListener('click', () => dlg.close());
+
+  // ---------- Zoom ----------
+  // Clic ou molette pour zoomer, glisser pour se déplacer, pincer sur mobile, Échap pour fermer
+  const zoom = $('#zoom'), stage = $('#zoom-stage'), zimg = $('#zoom-img');
+  const Z_MIN = 1, Z_MAX = 4;
+  const z = { s: 1, x: 0, y: 0 };
+  function paintZoom() {
+    z.s = Math.min(Math.max(z.s, Z_MIN), Z_MAX);
+    if (z.s === 1) { z.x = 0; z.y = 0; }
+    // L'image ne sort jamais complètement du cadre
+    const w = zimg.offsetWidth, h = zimg.offsetHeight;
+    const mx = Math.max(0, (w * z.s - stage.clientWidth) / 2 + 40), my = Math.max(0, (h * z.s - stage.clientHeight) / 2 + 40);
+    z.x = Math.min(Math.max(z.x, -mx), mx);
+    z.y = Math.min(Math.max(z.y, -my), my);
+    zimg.style.setProperty('--zs', z.s);
+    zimg.style.setProperty('--zx', z.x + 'px');
+    zimg.style.setProperty('--zy', z.y + 'px');
+    stage.classList.toggle('zoomed', z.s > 1);
+    $('#zoom-level').value = Math.round(z.s * 100) + ' %';
+  }
+  // Zoome en gardant fixe le point (cx, cy) de l'écran
+  function zoomAt(next, cx, cy) {
+    const r = stage.getBoundingClientRect();
+    const px = (cx ?? r.left + r.width / 2) - (r.left + r.width / 2), py = (cy ?? r.top + r.height / 2) - (r.top + r.height / 2);
+    const k = Math.min(Math.max(next, Z_MIN), Z_MAX) / z.s;
+    z.x = px - (px - z.x) * k;
+    z.y = py - (py - z.y) * k;
+    z.s *= k;
+    paintZoom();
+  }
+  function openZoom(c) {
+    zimg.src = `img/${c.i}.webp`;
+    zimg.alt = nameOf(c);
+    $('#zoom-name').textContent = nameOf(c);
+    z.s = 1;
+    paintZoom();
+    zoom.showModal();
+  }
+  let zoomCard = null;
+  $('#zoom-open').addEventListener('click', () => zoomCard && openZoom(zoomCard));
+  $('#dlg-card').addEventListener('click', () => zoomCard && openZoom(zoomCard));
+  $('#zoom-close').addEventListener('click', () => zoom.close());
+  $('#zoom-in').addEventListener('click', () => zoomAt(z.s * 1.5));
+  $('#zoom-out').addEventListener('click', () => zoomAt(z.s / 1.5));
+  $('#zoom-reset').addEventListener('click', () => { z.s = 1; paintZoom(); });
+  stage.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(z.s * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX, e.clientY); }, { passive: false });
+
+  const pts = new Map();
+  let drag = null, moved = false, pinch = null;
+  stage.addEventListener('pointerdown', (e) => {
+    stage.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    moved = false;
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), s: z.s };
+      drag = null;
+    } else drag = { x: e.clientX - z.x, y: e.clientY - z.y };
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      zoomAt(pinch.s * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      moved = true;
+    } else if (drag && z.s > 1) {
+      const nx = e.clientX - drag.x, ny = e.clientY - drag.y;
+      if (Math.abs(nx - z.x) + Math.abs(ny - z.y) > 3) { moved = true; stage.classList.add('dragging'); }
+      z.x = nx; z.y = ny;
+      paintZoom();
+    }
+  });
+  function endPointer(e) {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (!pts.size) {
+      stage.classList.remove('dragging');
+      // Simple clic : zoom ×2 sur le point cliqué, ou retour à l'ajustement
+      if (!moved && drag && e.type === 'pointerup') z.s > 1 ? (z.s = 1, paintZoom()) : zoomAt(2.5, e.clientX, e.clientY);
+      drag = null;
+    }
+  }
+  stage.addEventListener('pointerup', endPointer);
+  stage.addEventListener('pointercancel', endPointer);
+  addEventListener('resize', () => zoom.open && paintZoom());
   dlg.addEventListener('click', (e) => {
     if (e.target === dlg || e.target.closest('[data-close]')) {
       if (e.target.closest('[data-close]')) $('#card-search').value = '';
